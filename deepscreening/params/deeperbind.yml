@@ -1,0 +1,36 @@
+{
+    reload_model : false,
+    prev_epochs  : 0,
+
+    # general parameters
+    batch_size : 32,
+    epochs     : 1,
+    val_split  : 0.2,
+    loss       : mean_squared_error,
+
+    # convolution parameters
+    is_batchnorm_conv : true,
+    conv_activation   : tanh,
+    num_conv_layers   : 6,
+    conv_dim_depth    : 8,
+    conv_dim_width    : 9,
+    conv_depth_gf     : 1.15875438383,
+    conv_width_gf     : 1.1758149644,
+
+    # lstm parameters
+    num_lstm_layers     : 2,
+    lstm_activation     : tanh,
+    latent_space_dim_gf : 1.4928245388, # growth factor applied to determine size of next middle layer.
+    latent space_dim    : 128,
+
+    # dense parameters
+    num_dense_layers    : 2,
+    dense_dropout_rate  : 0.25,
+    is_batchnorm_dense  : true,
+    dense_activation    : tanh,
+
+    # Optimization parameters
+    lr       : 0.000312087049936,
+    momentum : 0.936948773087,
+    optim    : adam, # optimizer to be used
+}
