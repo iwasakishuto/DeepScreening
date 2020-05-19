@@ -1,0 +1,19 @@
+# Ref: https://github.com/aspuru-guzik-group/chemical_vae/blob/master/environment.yml
+name: deep-screening
+channels:
+  - rdkit
+  - conda-forge
+
+dependencies:
+  - keras
+  - tensorflow
+  - h5py
+  - hdf5
+  - pandas
+  - python=3
+  - scikit-learn
+  - boost
+  - rdkit
+  - yaml
+  - numpy
+  - matplotlib

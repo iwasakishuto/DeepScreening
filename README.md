@@ -2,6 +2,13 @@
 
 **Drug discovery screening** by **deep learning.**
 
+## Setup
+
+```sh
+$ conda env create -f environment.yml
+$ source activate deep-screening
+```
+
 ## Chemical
 
 **chemvae**<sup><a href="#anchor1">[1]</a></sup> converts discrete representations of molecules ([SMILES](https://en.wikipedia.org/wiki/Simplified_molecular-input_line-entry_system)/[InChI](https://en.wikipedia.org/wiki/International_Chemical_Identifier)) to a multidimensional continuous representation. To enable molecular design and search, the chemical structures encoded in the continuous representation of the autoencoder need to be correlated with the target properties (**gene expression / epigenomic profiles**), so prediction model is added to vae. If joint model which predicts the properties of all genes is added to vae, the "new NP problem" is occured. Therefore, I use individual model insted.
