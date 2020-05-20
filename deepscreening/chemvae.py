@@ -12,9 +12,9 @@ from .tgru_k2_gpu import TerminalGRU
 # =============================
 
 def encoder_model(params={}):
-    max_len   = params.get("max_len")
-    num_chars = params.get("num_chars", 35) # zinc.yml
-    x_in = Input(shape=(max_len, num_chars), name='input_mol_SMILES')
+    max_chem_len = params.get("max_chem_len")
+    num_chars    = params.get("num_chars", 35) # zinc.yml
+    x_in = Input(shape=(max_chem_len, num_chars), name='input_mol_SMILES')
 
     # Convolutional
     num_conv_layers   = params.get("num_conv_layers", 4)
@@ -28,7 +28,7 @@ def encoder_model(params={}):
     x = x_in
     for j in range(num_conv_layers):
         x = Convolution1D(filters=int(conv_dim_depth * conv_depth_gf**j),
-                          kernel_size=int(conv_dim_width * conv_w_growth_factor**j),
+                          kernel_size=int(conv_dim_width * conv_width_gf**j),
                           activation=conv_activation,
                           name=f"encoder_conv{j}")(x)
         if is_batchnorm_conv:
@@ -56,20 +56,22 @@ def encoder_model(params={}):
     return Model(x_in, [z_mean, x], name="encoder")
 
 def load_encoder(params={}):
-    path = params.get("encoder_weights_path")
-    return load_model(path)
-
+    if "encoder_weights_path" in params:
+        path = params.get("encoder_weights_path")
+        return load_model(path)
+    else:
+        return encoder_model(params)
 
 # =============================
 # Decoder
 # =============================
 
 def decoder_model(params={}):
-    max_len   = params.get("max_len")
-    num_chars = params.get("num_chars", 35) # zinc.yml
-    latent_space_dim    = params.get("latent space_dim", 128)
+    max_chem_len     = params.get("max_chem_len")
+    num_chars        = params.get("num_chars", 35) # zinc.yml
+    latent_space_dim = params.get("latent space_dim", 128)
     z_in = Input(shape=(latent_space_dim,), name="decoder_input")
-    true_seq_in = Input(shape=(max_len, num_chars), name="decoder_true_SMILES_input")
+    true_seq_in = Input(shape=(max_chem_len, num_chars), name="decoder_true_SMILES_input")
 
     # Middle layers
     num_dense_layers    = params.get("num_dense_layers", 1)
@@ -90,12 +92,12 @@ def decoder_model(params={}):
             z = BatchNormalization(axis=-1, name=f"decoder_dense_norm{j}")(z)
 
     # Necessary for using GRU vectors
-    z_reps = RepeatVector(max_len)(z)
+    z_reps = RepeatVector(max_chem_len)(z)
 
     num_gru_layers = params.get("num_gru_layers", 4)
-    recurrent_dim = params.get("recurrent_dim", 50)
+    recurrent_dim  = params.get("recurrent_dim", 50)
     rnn_activation = params.get("rnn_activation", "tanh")
-    use_tgru = params.get("use_tgru" True)
+    use_tgru       = params.get("use_tgru", True)
 
     # Encoder parts using GRUs
     x_dec = z_reps
@@ -129,9 +131,11 @@ def decoder_model(params={}):
         return Model(z_in, x_out, name="decoder")
 
 def load_decoder(params={}):
-    path = params.get("decoder_weights_path")
-    return load_model(path, custom_objects={'TerminalGRU': TerminalGRU})
-
+    if "decoder_weights_path" in params:
+        path = params.get("decoder_weights_path")
+        return load_model(path)
+    else:
+        return decoder_model(params)
 
 ##====================
 ## Middle part (var)
@@ -213,5 +217,8 @@ def property_predictor_model(params={}):
     return Model(inputs=ls_in, outputs=outputs, name="property_predictor")
 
 def load_property_predictor(params):
-    path = params.get("property_pred_weights_path")
-    return load_model(path)
+    if "property_pred_weights_path" in params:
+        path = params.get("property_pred_weights_path")
+        return load_model(path)
+    else:
+        return property_predictor_model(params)
