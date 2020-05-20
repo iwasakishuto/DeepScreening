@@ -19,7 +19,7 @@ $ python -m ipykernel install --user --name=deep-screening
 
 |joint model|individual model|
 |:-:|:-:|
-|![joint-model](image/joint-model.png)|![individual-model](image/individual-model.png)|
+|![joint-model](https://github.com/iwasakishuto/DeepScreening/blob/master/image/joint-model.png?raw=true)|![individual-model](https://github.com/iwasakishuto/DeepScreening/blob/master/image/individual-model.png?raw=true)|
 
 In order to learn a better representation, I use metric learning in representation space. The following features are used as indicators of the similarity between the chemicals.
 
@@ -47,7 +47,7 @@ DeeperBind uses Deep Convolutional Neural Network to **chracterize multiple moti
 
 In order to create the desirble feature vectors in latent space, I use **triplet-loss**<sup><a href="#anchor6">[6]</a></sup>, which enables model to directly learn a good embeddings for each data (sequence/SMILES). In the embedding space, distances directly correspond to a measure of data similality. Therefore, onece this embedding has been produced, then the other kinds of tasks become straight-forward.
 
-![triplet-loss](image/triplet-loss.png)
+![triplet-loss](https://github.com/iwasakishuto/DeepScreening/blob/master/image/triplet-loss.png?raw=true)
 
 ## training
 
@@ -63,7 +63,7 @@ at once may prevent the model from convergence. Therefore, I use [zink database]
 
 Once a well-learned model is created, the feature vectors in the chemical latent space that realizes the desired landscape can be obtained by using the method of **Adversarial Exemple**<sup><a href="#anchor7">[7]</a></sup>. Then, by using the decoder of chemvae, the actual compounds can be restored from the feature vectors. This makes it possible to extract a drug with a high probability of exerting the desired effect.
 
-![feature-works](image/feature-works.png)
+![feature-works](https://github.com/iwasakishuto/DeepScreening/blob/master/image/feature-works.png?raw=true)
 
 ## Reference
 
