@@ -81,19 +81,14 @@ class TerminalGRU(GRU):
     # Heavily adapted from GRU in recurrent.py
     # Implements professor forcing
 
-    def __init__(self, units,
-                 temperature=1., rnd_seed=None, recurrent_dropout=0.0,
-                 **kwargs):
+    def __init__(self, units, temperature=1., rnd_seed=None, recurrent_dropout=0.0, **kwargs):
         # @param: temperature - sampling temperature
         # Annealing will be handled in the callbacks
-        super(TerminalGRU, self).__init__(units, **kwargs)
-        self.units = units
+        super().__init__(units=units, **kwargs)
         self.temperature = temperature
         self.rnd_seed = rnd_seed
         self.uses_learning_phase = True
         self.supports_masking = False
-        self.units = units
-        self.recurrent_dropout = min(1., max(0., recurrent_dropout))
         self.input_spec = [InputSpec(ndim=3),
                            InputSpec(ndim=3)]
 
@@ -191,7 +186,7 @@ class TerminalGRU(GRU):
             constants.append([K.cast_to_floatx(1.) for _ in range(3)])
         return constants
 
-    def call(self, inputs, mask=None):
+    def call(self, inputs):
         if type(inputs) is not list or len(inputs) != 2:
             raise Exception('terminal gru runs on list of length 2')
 

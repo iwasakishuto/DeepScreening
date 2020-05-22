@@ -1,17 +1,34 @@
 # coding: utf-8
-from keras.layers import Input, Lambda, Dense, Flatten, RepeatVector, Dropout, Concatenate
+import tensorflow as tf
+from keras.layers import Layer, Input, Lambda, Dense, Flatten, RepeatVector, Dropout, Concatenate
 from keras.layers.convolutional import Convolution1D
 from keras.layers.recurrent import GRU
 from keras.layers.normalization import BatchNormalization
 from keras.models import load_model, Model
 from keras import backend as K
-from .tgru_k2_gpu import TerminalGRU
+
+# =============================
+# Sampling layer
+# =============================
+
+class Sampling(Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch_size = tf.shape(z_mean)[0]
+        latent_space_dim = tf.shape(z_mean)[1]
+        epsilon = tf.keras.backend.random_normal_variable(shape=(batch_size, latent_space_dim), mean=0., scale=1.)
+        z_rand = z_mean + tf.exp(0.5 * z_log_var)*epsilon
+        return tf.keras.backend.in_train_phase(z_rand, z_mean)
 
 # =============================
 # Encoder
 # =============================
 
-def encoder_model(params={}):
+def encoder_model(params={}, **kwargs):
+    params.update(kwargs)
     max_chem_len = params.get("max_chem_len")
     num_chars    = params.get("num_chars", 35) # zinc.yml
     x_in = Input(shape=(max_chem_len, num_chars), name='input_mol_SMILES')
@@ -51,27 +68,30 @@ def encoder_model(params={}):
             x = Dropout(rate=dense_dropout_rate)(x)
         if is_batchnorm_dense:
             x = BatchNormalization(axis=-1, name=f"encoder_dense_norm{j}")(x)
-    z_mean = Dense(latent_space_dim, name='z_mean_sample')(x)
 
-    return Model(x_in, [z_mean, x], name="encoder")
+    z_mean    = Dense(latent_space_dim, name="latent_mean")(x)
+    z_log_var = Dense(latent_space_dim, name="latent_log_var")(x)
+    z = Sampling(name="encoder_output")([z_mean, z_log_var])
 
-def load_encoder(params={}):
+    return Model(x_in, [z_mean, z_log_var, z], name="encoder")
+
+def load_encoder(params={}, **kwargs):
     if "encoder_weights_path" in params:
         path = params.get("encoder_weights_path")
         return load_model(path)
     else:
-        return encoder_model(params)
+        return encoder_model(params, **kwargs)
 
 # =============================
 # Decoder
 # =============================
 
-def decoder_model(params={}):
+def decoder_model(params={}, **kwargs):
+    params.update(kwargs)
     max_chem_len     = params.get("max_chem_len")
     num_chars        = params.get("num_chars", 35) # zinc.yml
     latent_space_dim = params.get("latent space_dim", 128)
     z_in = Input(shape=(latent_space_dim,), name="decoder_input")
-    true_seq_in = Input(shape=(max_chem_len, num_chars), name="decoder_true_SMILES_input")
 
     # Middle layers
     num_dense_layers    = params.get("num_dense_layers", 1)
@@ -94,86 +114,34 @@ def decoder_model(params={}):
     # Necessary for using GRU vectors
     z_reps = RepeatVector(max_chem_len)(z)
 
-    num_gru_layers = params.get("num_gru_layers", 4)
-    recurrent_dim  = params.get("recurrent_dim", 50)
+    num_gru_layers = params.get("num_gru_layers", 3)
+    recurrent_dim  = params.get("recurrent_dim", 36)
     rnn_activation = params.get("rnn_activation", "tanh")
-    use_tgru       = params.get("use_tgru", True)
 
     # Encoder parts using GRUs
     x_dec = z_reps
     if num_gru_layers > 1:
-        for j in range(num_gru_layers-1):
+        for j in range(num_gru_layers):
             x_dec = GRU(units=recurrent_dim,
                         return_sequences=True,
                         activation=rnn_activation,
                         name=f"decoder_gru{j}")(x_dec)
-    if use_tgru:
-        rand_seed = params.get("rand_seed", 42)
-        tgru_dropout_rate = params.get("tgru_dropout_rate", 0.0)
-        terminal_GRU_implementation = params.get("terminal_GRU_implementation", 0)
-        x_out = TerminalGRU(units=num_chars,
-                            rnd_seed=rand_seed,
-                            recurrent_dropout=tgru_dropout_rate,
-                            return_sequences=True,
-                            activation='softmax',
-                            temperature=0.01,
-                            name='decoder_tgru',
-                            implementation=terminal_GRU_implementation)([x_dec, true_seq_in])
-    else:
-        x_out = GRU(units=num_chars,
-                    return_sequences=True,
-                    activation='softmax',
-                    name='decoder_gru_final')(x_dec)
 
-    if use_tgru:
-        return Model([z_in, true_seq_in], x_out, name="decoder")
-    else:
-        return Model(z_in, x_out, name="decoder")
+    return Model(z_in, x_dec, name="decoder")
 
-def load_decoder(params={}):
+def load_decoder(params={}, **kwargs):
     if "decoder_weights_path" in params:
         path = params.get("decoder_weights_path")
         return load_model(path)
     else:
-        return decoder_model(params)
-
-##====================
-## Middle part (var)
-##====================
-
-def variational_layers(z_mean, enc, kl_loss_var, params={}):
-    """
-    @params z_mean      : mean generated from encoder.
-    @params enc         : output generated by encoding.
-    @params kl_loss_var : Kullback-Leibler divergence loss.
-    """
-    batch_size       = params.get("batch_size", 32)
-    latent_space_dim = params.get("latent space_dim", 128)
-    is_batchnorm_vae = params.get("batchnorm_vae", False)
-
-    def sampling(args):
-        z_mean, z_log_var = args
-        epsilon = K.random_normal_variable(shape=(batch_size, latent_space_dim),
-                                           mean=0., scale=1.)
-        # insert kl loss here
-        z_rand = z_mean + K.exp(z_log_var / 2) * kl_loss_var * epsilon
-        return K.in_train_phase(z_rand, z_mean)
-
-    # variational encoding
-    z_log_var = Dense(latent_space_dim, name='z_log_var_sample')(enc)
-
-    z_samp = Lambda(sampling)([z_mean, z_log_var])
-    z_mean_log_var_output = Concatenate(name='z_mean_log_var')([z_mean, z_log_var])
-    if is_batchnorm_vae:
-        z_samp = BatchNormalization(axis=-1)(z_samp)
-
-    return z_samp, z_mean_log_var_output
+        return decoder_model(params, **kwargs)
 
 # ====================
 # Property Prediction
 # ====================
 
-def property_predictor_model(params={}):
+def property_predictor_model(params={}, **kwargs):
+    params.update(kwargs)
     num_prov_layers      = params.get("num_prov_layers", 3)
     latent_space_dim     = params.get("latent space_dim", 128)
     prop_hidden_dim      = params.get("prop_hidden_dim", 36)
@@ -181,9 +149,9 @@ def property_predictor_model(params={}):
     prop_pred_activation = params.get("prop_pred_activation", "tanh")
     prop_pred_dropout    = params.get("prop_pred_dropout", 0.0)
     is_batchnorm_prop    = params.get("is_batchnorm_prop", True)
-    ls_in = Input(shape=(latent_space_dim,), name='prop_pred_input')
+    x_in = Input(shape=(latent_space_dim,), name='prop_pred_input')
 
-    x = is_in
+    x = x_in
     for j in range(num_prov_layers):
         x = Dense(units=int(prop_hidden_dim * prop_hidden_dim_gf**j),
                   activation=prop_pred_activation,
@@ -214,11 +182,11 @@ def property_predictor_model(params={}):
                                 activation='sigmoid',
                                 name='logit_property_output')(x)
         outputs.append(logit_prop_pred)
-    return Model(inputs=ls_in, outputs=outputs, name="property_predictor")
+    return Model(inputs=x_in, outputs=outputs, name="property_predictor")
 
-def load_property_predictor(params):
+def load_property_predictor(params, **kwargs):
     if "property_pred_weights_path" in params:
         path = params.get("property_pred_weights_path")
         return load_model(path)
     else:
-        return property_predictor_model(params)
+        return property_predictor_model(params, **kwargs)

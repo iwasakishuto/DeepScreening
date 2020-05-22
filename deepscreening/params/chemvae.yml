@@ -22,9 +22,6 @@
     num_gru_layers              : 4,
     rnn_activation              : tanh,
     recurrent_dim               : 50,
-    use_tgru                    : true, # use custom terminal gru layer
-    terminal_GRU_implementation : 0,    # use CPU intensive implementation; other implementation modes (1 - GPU, 2- memory) are not yet implemented
-    tgru_dropout_rate           : 0.0,
     temperature                 : 1.00, # amount of noise for sampling the final output
 
     # middle layer parameters
