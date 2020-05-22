@@ -1,64 +1,58 @@
 {
-    reload_model : false,
-    prev_epochs  : 0,
-
     # general parameters
     batch_size : 32,
     epochs     : 1,
-    val_split  : 0.2,
-    loss       : categorical_crossentropy, # set reconstruction loss
-    rand_seed  : 42,
+    latent space_dim    : 128,
+    latent_space_dim_gf : 1.4928245388, # growth factor applied to determine size of next middle layer.
+
+    # loss function
+    reg_prop_pred_loss   : mse,
+    logit_prop_pred_loss : binary_crossentropy,
+    reconstruction_loss  : categorical_crossentropy,
+
+    # =============================
+    # Encoder
+    # =============================
 
     # convolution parameters
-    is_batchnorm_conv : true,
-    conv_activation   : tanh,
     num_conv_layers   : 4,
     conv_dim_depth    : 8,
     conv_dim_width    : 8,
     conv_depth_gf     : 1.15875438383,
     conv_width_gf     : 1.1758149644,
+    conv_dropout_rate : 0.0,
+    conv_activation   : tanh,
+    is_batchnorm_conv : true,
 
-    # decoder parameters
-    num_gru_layers              : 4,
-    rnn_activation              : tanh,
-    recurrent_dim               : 50,
-    temperature                 : 1.00, # amount of noise for sampling the final output
+    # =============================
+    # Encoder & ecoder
+    # =============================
 
-    # middle layer parameters
-    latent_space_dim_gf : 1.4928245388, # growth factor applied to determine size of next middle layer.
-    latent space_dim    : 128,
-    num_dense_layers    : 1,
+    # Middle layer parameters (Encoder & Decoder)
+    num_dense_layers    : 2,
+    dense_activation    : tanh,
     dense_dropout_rate  : 0.0,
     is_batchnorm_dense  : true,
-    dense_activation    : tanh,
 
-    # Optimization parameters
-    lr       : 0.000312087049936,
-    momentum : 0.936948773087,
-    optim    : adam, # optimizer to be used
+    # =============================
+    # Decoder
+    # =============================
 
-    # vae parameters
-    vae_annealer_start  : 22,     # Center for variational weigh annealer
-    is_batchnorm_vae    : false,  # apply batch normalization to output of the variational layer
-    vae_activation      : tanh,
-    xent_loss_weight    : 1.0,    # loss weight to assign to reconstruction error.
-    kl_loss_weight      : 1.0,    # loss weight to assing to KL loss
-    anneal_sigmod_slope : 1.0,    # slope of sigmoid variational weight annealer
-    freeze_logvar_layer : false,  # Choice of freezing the variational layer until close to the anneal starting epoch
-    freeze_offset       : 1,      # the number of epochs before vae_annealer_start where the variational layer should be unfrozen
+    # decoder parameters
+    num_gru_layers   : 4,
+    gru_dim          : 50,
+    gru_activation   : tanh,
+    gru_dropout_rate : 0.0,
+    is_batchnorm_gru : True,
 
-    # property prediction parameters:
-    do_prop_pred          : false, # whether to do property prediction
-    prop_pred_depth       : 3,
-    prop_hidden_dim       : 36,
-    prop_hidden_dim_gf    : 0.8, # ratio between consecutive layer in property prediction
-    prop_pred_activation  : tanh,
-    reg_prop_pred_loss    : mse, # loss function to use with property prediction error for regression tasks
-    logit_prop_pred_loss  : binary_crossentropy, # loss function to use with property prediction for logistic tasks
-    prop_pred_loss_weight : 0.5,
-    prop_pred_dropout     : 0.0,
-    is_batchnorm_prop     : true,
+    # =============================
+    # Property Predictor
+    # =============================
 
-    # print output parameters
-    verbose_print: 0,
+    num_prov_layers        : 3,
+    prop_hidden_dim        : 36,
+    prop_hidden_dim_gf     : 0.8,
+    prop_pred_activation   : tanh,
+    prop_pred_dropout_rate : 0.0,
+    is_batchnorm_prop      : true,
 }
