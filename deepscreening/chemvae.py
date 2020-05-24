@@ -309,13 +309,15 @@ if __name__ == "__main__":
     parser.add_argument("--non-verbose", action="store_false")
     args = parser.parse_args()
 
-    params_path = args.params
-    params = load_params(params_path)
-    dirname = os.path.dirname(params_path)
+    params_rela_path = args.params
+    dirname          = os.path.dirname(params_rela_path)
+    params_file_name = os.path.basename(params_rela_path)
+    os.getcwd(dirname)
+    params = load_params(path=params_file_name, name="ChemVAE")
 
     train_basename = args.train_basename
     if train_basename is None:
-        train_basename = os.path.join(dirname, params.get("train_basename"))
+        train_basename = params.get("train_basename")
         train_x = np.load(f"{train_basename}_x.npy", allow_pickle=True)
         train_y = []
         for path in [f"{train_basename}_y_reg.npy", f"{train_basename}_y_logit.npy"]:
@@ -330,7 +332,6 @@ if __name__ == "__main__":
         if validation_basename is None:
             validation_data = None
         else:
-            validation_basename = os.path.join(dirname, validation_basename)
             val_x = np.load(f"{validation_basename}_x.npy", allow_pickle=True)
             val_y = []
             for path in [f"{validation_basename}_y_reg.npy", f"{validation_basename}_y_logit.npy"]:
@@ -340,8 +341,8 @@ if __name__ == "__main__":
     else:
         validation_basename = os.path.basename(validation_basename)
 
-    model = ChemVAE(params_path=params, x_train=train_x)
-    with open(os.path.join(dirname, "model_summary.txt"), mode="w") as fp:
+    model = ChemVAE(params=params, x_train=train_x)
+    with open("model_summary.txt", mode="w") as fp:
         model.summary(print_fn=lambda x: fp.write(x + "\r\n"))
 
     optimizer  = params.get("optimizer", "adam")
@@ -351,6 +352,6 @@ if __name__ == "__main__":
     model.compile(optimizer=optimizer)
     history = model.fit(x=train_x, y=train_y, epochs=epochs, verbose=verbose,
                         batch_size=batch_size, validation_data=validation_data)
-    model.save_weights(os.path.join(dirname, "weights.h5"))
-    model.save(os.path.join(dirname, "model.h5"))
-    np.savetxt(os.path.join(dirname, "loss_history.txt"), np.asarray(history.history["loss"]), delimiter=",")
+    model.save_weights("weights.h5")
+    model.save("model.h5")
+    np.savetxt("loss_history.txt", np.asarray(history.history["loss"]), delimiter=",")
