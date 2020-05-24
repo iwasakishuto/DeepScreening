@@ -1,94 +1,125 @@
 # coding: utf-8
-import tensorflow as tf
-from tensorflow.keras.layers import (Layer, Input, Lambda, Dense, Flatten,
+import os
+import re
+import argparse
+import warnings
+import numpy as np
+from keras.layers import (Layer, Input, Lambda, Dense, Flatten,
                                      RepeatVector, Dropout, Concatenate,
                                      Convolution1D, GRU, BatchNormalization)
-from tensorflow.keras.models import load_model, Model
+from keras.models import load_model, Model
+from keras import losses
+from keras import backend as K
 
 from .utils import load_params
 
 class ChemVAE(Model):
-    def __init__(self, x_train, param_path=None, **kwargs):
-        params = load_params(path=param_path, name="chemvae")
+    def __init__(self, params=None, x_train=None, **kwargs):
+        if params is None or isinstance(params, str):
+            params = load_params(path=params, name="chemvae")
         params.update(kwargs)
-
-        num_tranin, max_chem_len, num_chars = x_train.shape
-        params["max_chem_len"] = max_chem_len
-        params["num_chars"] = num_chars
-
+        if x_train is not None:
+            params = self._update_params(x_train, params)
+        # Build the respective models.
         encoder = load_encoder(params=params)
         decoder = load_decoder(params=params)
         property_predictor = load_property_predictor(params=params)
-
+        # Integrates everything.
         x_in = encoder.input
         z_mean, z_log_var, z = encoder(x_in)
         reconstructed = decoder(z)
         predictions = property_predictor(z)
-        super().__init__(inputs=x_in, outputs=[reconstructed, predictions])
 
+        if isinstance(predictions, list):
+            outputs = [Lambda(identity, name=re.sub(r"^.*\/(.+_property_)output\/.*$", r"\1pred", pred.name))(pred) for pred in predictions]
+            outputs.append(reconstructed)
+        else:
+            predictions = Lambda(identity, name=re.sub(r"^.*\/(.+_property_)output\/.*$", r"\1pred", predictions[0].name))(predictions)
+            outputs = [predictions, reconstructed]
+        super().__init__(inputs=x_in, outputs=outputs, name="ChemVAE")
+        # Memorize.
         self.encoder = encoder
         self.decoder = decoder
         self.property_predictor = property_predictor
+        # Add losses.
+        self._add_losses(
+            x_in=x_in, z_mean=z_mean, z_log_var=z_log_var,
+            reconstructed=reconstructed, predictions=predictions,
+            params=params
+        )
         self.params = params
-        self.x_train = x_train
 
-        loss = { "decoder_gru_final": params.get("reconstruction_loss", "categorical_crossentropy")}
-        if "reg_prop_tasks" in params:
-            loss.update({"reg_property_output": params.get("reg_prop_pred_loss", "mse")})
-        if "logit_prop_tasks" in params:
-            loss.update({"logit_property_output": params.get("logit_prop_pred_loss", "binary_crossentropy")})
-        self.loss_dict = loss
-        self.fit = {
-            2: self._fit_mono_prop_task,
-            3: self._fit_multi_prop_tasks,
-        }.get(len(loss))
+    def _update_params(self, x_train, params):
+        num_tranin, max_chem_len, num_chars = x_train.shape
+        params["max_chem_len"] = max_chem_len
+        params["num_chars"] = num_chars
+        return params
+
+    def _add_losses(self, x_in, z_mean, z_log_var, reconstructed, predictions, params={}):
+        kl_loss = 1 + z_log_var - K.square(z_mean) - K.exp(z_log_var)
+        kl_loss = K.sum(kl_loss, axis=-1)
+        kl_loss *= -0.5
+        kl_loss /= params["max_chem_len"]*params["num_chars"]
+        self.add_loss(K.mean(kl_loss))
+
+        prop_losses = {"decoder": params.get("reconstruction_loss", "binary_crossentropy")}
+        if "reg_prop_pred_loss" in params:
+            prop_losses["reg_property_pred"] = params.get("reg_prop_pred_loss")
+        if "logit_prop_pred_loss" in params:
+            prop_losses["logit_property_pred"] =  params.get("logit_prop_pred_loss")
+        self.prop_losses = prop_losses
 
     def compile(self, optimizer, loss=None, metrics=None, loss_weights=None):
-        super().compile(optimizer=optimizer, loss=self.loss_dict, metrics=metrics, loss_weights=loss_weights)
+        if loss is not None:
+            warnings.warn(f"Loss is already defined. If you want to customize it, please describe it in the params file.")
+        super().compile(optimizer=optimizer, loss=self.prop_losses, metrics=metrics, loss_weights=loss_weights)
 
-    def _fit_mono_prop_task(self, y, batch_size=None, epochs=1, verbose=1, callbacks=None, validation_data=None, **kwargs):
-        task_name = [k for k in self.loss_dict.keys() if k != "decoder_gru_final"]
-        y = {"decoder_gru_final": self.x_train, task_name : y}
-        if validation_data is not None:
-            x_val, y_val = validation_data
-            y_val = {"decoder_gru_final": x_val, task_name : y_val}
-            validation_data = (x_val, y_val)
-        batch_size = batch_size or self.params.get("batch_size")
-        return super().fit(x=self.x_train, y=y, batch_size=batch_size,
-                           epochs=epochs, verbose=verbose, callables=callbacks,
-                           validation_data=validation_data, **kwargs)
-
-    def _fit_multi_prop_tasks(self, y_reg, y_logit, batch_size=None, epochs=1, verbose=1, callbacks=None, validation_data=None, **kwargs):
-        y = {"decoder_gru_final": self.x_train, "reg_property_output": y_reg, "logit_property_output" : y_logit}
-        if validation_data is not None:
-            x_val, y_val_reg, y_val_logit = validation_data
-            y_val = {"decoder_gru_final": x_val, "reg_property_output": y_val_reg, "logit_property_output" : y_val_logit}
-            validation_data = (x_val, y_val)
-            batch_size = batch_size or self.params.get("batch_size")
-        return super().fit(x=self.x_train, y=y, batch_size=batch_size,
-                           epochs=epochs, verbose=verbose, callables=callbacks,
-                           validation_data=validation_data, **kwargs)
-
-    def call(self, inputs):
-        z_mean, z_log_var, z = self.encoder(inputs)
-        kl_loss = -0.5*tf.reduce_mean(z_log_var-tf.square(z_mean)-tf.exp(z_log_var)+1.)
-        self.add_loss(kl_loss)
+    def fit(self, x=None, y=None, batch_size=None, epochs=1, verbose=1,
+            callbacks=None, validation_split=0.0, validation_data=None,
+            shuffle=True, class_weight=None, sample_weight=None, initial_epoch=0,
+            steps_per_epoch=None, validation_steps=None, validation_freq=1,
+            max_queue_size=10, workers=1, use_multiprocessing=False, **kwargs):
+        num_prop_tasks = len(self.prop_losses)
+        if num_prop_tasks == 3:
+            y = {"decoder": x, "reg_property_pred": y[0], "logit_property_pred": y[1]}
+            if validation_data is not None:
+                x_val, y_val_reg, y_val_logit = validation_data
+                validation_data = (x_val, {"decoder": x_val, "reg_property_pred": y_val_reg, "logit_property_pred": y_val_logit})
+        elif num_prop_tasks == 2:
+            prop_pred_name = list(self.prop_losses.keys())[0]
+            y = {"decoder": x, prop_pred_name: y}
+            if validation_data is not None:
+                x_val, y_val  = validation_data
+                validation_data = (x_val, {"decoder": x_val, prop_pred_name: y_val})
+        return super().fit(x=x, y=y, batch_size=batch_size, epochs=epochs, verbose=verbose,
+                           callbacks=callbacks, validation_split=validation_split, validation_data=validation_data,
+                           shuffle=shuffle, class_weight=class_weight, sample_weight=sample_weight, initial_epoch=initial_epoch,
+                           steps_per_epoch=steps_per_epoch, validation_steps=validation_steps, validation_freq=validation_freq,
+                           max_queue_size=max_queue_size, workers=workers, use_multiprocessing=use_multiprocessing, **kwargs)
 
 # =============================
-# Sampling layer
+# Lambda layer
 # =============================
 
-class Sampling(Layer):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+def identity(x):
+    return K.identity(x)
 
-    def call(self, inputs):
-        z_mean, z_log_var = inputs
-        batch_size = tf.shape(z_mean)[0]
-        latent_space_dim = tf.shape(z_mean)[1]
-        epsilon = tf.keras.backend.random_normal_variable(shape=(batch_size, latent_space_dim), mean=0., scale=1.)
-        z_rand = z_mean + tf.exp(0.5 * z_log_var)*epsilon
-        return tf.keras.backend.in_train_phase(z_rand, z_mean)
+def sampling(args):
+    """
+    reparameterization trick
+    instead of sampling from Q(z|X), sample epsilon = N(0,I)
+    z = z_mean + sqrt(var) * epsilon
+    ~~~
+    @params args (tensor): mean and log of variance of Q(z|X)
+    @return z    (tensor): sampled latent vector
+    """
+    z_mean, z_log_var = args
+    batch = K.shape(z_mean)[0]
+    dim = K.int_shape(z_mean)[1]
+    # by default, random_normal has mean = 0 and std = 1.0
+    epsilon = K.random_normal(shape=(batch, dim))
+    z_rand = z_mean + K.exp(0.5 * z_log_var)*epsilon
+    return K.in_train_phase(z_rand, z_mean)
 
 # =============================
 # Encoder
@@ -141,7 +172,7 @@ def encoder_model(params={}, **kwargs):
 
     z_mean    = Dense(latent_space_dim, name="latent_mean")(x)
     z_log_var = Dense(latent_space_dim, name="latent_log_var")(x)
-    z = Sampling(name="encoder_output")([z_mean, z_log_var])
+    z = Lambda(function=sampling, output_shape=(latent_space_dim,), name="encoder_output")([z_mean, z_log_var])
 
     return Model(x_in, [z_mean, z_log_var, z], name="encoder")
 
@@ -156,7 +187,7 @@ def load_encoder(params={}, **kwargs):
 # Decoder
 # =============================
 
-def decoder_model(params={}, **kwargs):
+def decoder_model(params={}, add_loss=False, **kwargs):
     params.update(kwargs)
     max_chem_len     = params.get("max_chem_len")
     num_chars        = params.get("num_chars", 35) # zinc.yml
@@ -207,7 +238,6 @@ def decoder_model(params={}, **kwargs):
                 return_sequences=True,
                 activation='softmax',
                 name='decoder_gru_final')(x)
-
     return Model(z_in, x_out, name="decoder")
 
 def load_decoder(params={}, **kwargs):
@@ -243,24 +273,22 @@ def property_predictor_model(params={}, **kwargs):
         if is_batchnorm_prop:
             x = BatchNormalization(axis=-1, name=f"property_predictor_norm{j}")(x)
 
-    reg_prop_tasks       = params.get("reg_prop_tasks", [])
-    len_reg_prop_tasks   = len(reg_prop_tasks)
-    logit_prop_tasks     = params.get("logit_prop_tasks", [])
-    len_logit_prop_tasks = len(logit_prop_tasks)
-    if len_reg_prop_tasks+len_logit_prop_tasks==0:
+    num_reg_prop_tasks       = params.get("num_reg_prop_tasks", 0)
+    num_logit_prop_tasks     = params.get("num_logit_prop_tasks", 0)
+    if num_reg_prop_tasks+num_logit_prop_tasks==0:
         raise ValueError("You must specify either 'regression tasks' and/or " + \
                          "'logistic tasks' for property prediction.")
 
     # for regression tasks
     outputs = []
-    if len_reg_prop_tasks > 0:
-        reg_prop_pred = Dense(units=len_reg_prop_tasks,
+    if num_reg_prop_tasks > 0:
+        reg_prop_pred = Dense(units=num_reg_prop_tasks,
                               activation='linear',
                               name='reg_property_output')(x)
         outputs.append(reg_prop_pred)
     # for logistic tasks
-    if len_logit_prop_tasks > 0:
-        logit_prop_pred = Dense(units=len_logit_prop_tasks,
+    if num_logit_prop_tasks > 0:
+        logit_prop_pred = Dense(units=num_logit_prop_tasks,
                                 activation='sigmoid',
                                 name='logit_property_output')(x)
         outputs.append(logit_prop_pred)
@@ -272,3 +300,57 @@ def load_property_predictor(params={}, **kwargs):
         return load_model(path)
     else:
         return property_predictor_model(params, **kwargs)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--params", type=str, required=True)
+    parser.add_argument("-train", "--train-basename", type=str)
+    parser.add_argument("-val",   "--validation-basename", type=str)
+    parser.add_argument("--non-verbose", action="store_false")
+    args = parser.parse_args()
+
+    params_path = args.params
+    params = load_params(params_path)
+    dirname = os.path.dirname(params_path)
+
+    train_basename = args.train_basename
+    if train_basename is None:
+        train_basename = os.path.join(dirname, params.get("train_basename"))
+        train_x = np.load(f"{train_basename}_x.npy", allow_pickle=True)
+        train_y = []
+        for path in [f"{train_basename}_y_reg.npy", f"{train_basename}_y_logit.npy"]:
+            if os.path.exists(path):
+                train_y.append(np.load(path, allow_pickle=True))
+    else:
+        train_basename = os.path.basename(train_basename)
+
+    validation_basename = args.validation_basename
+    if validation_basename is None:
+        validation_basename = params.get("validation_basename")
+        if validation_basename is None:
+            validation_data = None
+        else:
+            validation_basename = os.path.join(dirname, validation_basename)
+            val_x = np.load(f"{validation_basename}_x.npy", allow_pickle=True)
+            val_y = []
+            for path in [f"{validation_basename}_y_reg.npy", f"{validation_basename}_y_logit.npy"]:
+                if os.path.exists(path):
+                    train_y.append(np.load(path, allow_pickle=True))
+            validation_data = (val_x, val_y)
+    else:
+        validation_basename = os.path.basename(validation_basename)
+
+    model = ChemVAE(params_path=params, x_train=train_x)
+    with open(os.path.join(dirname, "model_summary.txt"), mode="w") as fp:
+        model.summary(print_fn=lambda x: fp.write(x + "\r\n"))
+
+    optimizer  = params.get("optimizer", "adam")
+    epochs     = params.get("epochs", 1)
+    batch_size = params.get("batch_size", 32)
+    verbose = 1 if args.non_verbose else 0
+    model.compile(optimizer=optimizer)
+    history = model.fit(x=train_x, y=train_y, epochs=epochs, verbose=verbose,
+                        batch_size=batch_size, validation_data=validation_data)
+    model.save_weights(os.path.join(dirname, "weights.h5"))
+    model.save(os.path.join(dirname, "model.h5"))
+    np.savetxt(os.path.join(dirname, "loss_history.txt"), np.asarray(history.history["loss"]), delimiter=",")

@@ -8,6 +8,7 @@ PARAMS_DIR_PATH = os.path.join(BASE_DIR_PATH, "params")
 from . import generic_utils
 from . import mol_utils
 from . import params_utils
+from . import training_utils
 
 from .generic_utils import pad_string
 
@@ -19,3 +20,5 @@ from .mol_utils import mol2SMILES
 from .mol_utils import canonicalizeSMILES
 
 from .params_utils import load_params
+
+from .training_utils import smiles2onehot

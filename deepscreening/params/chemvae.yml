@@ -8,7 +8,7 @@
     # loss function
     reg_prop_pred_loss   : mse,
     logit_prop_pred_loss : binary_crossentropy,
-    reconstruction_loss  : categorical_crossentropy,
+    reconstruction_loss  : binary_crossentropy,
 
     # =============================
     # Encoder
