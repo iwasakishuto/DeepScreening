@@ -2,6 +2,8 @@
 import os
 import yaml
 import json
+from kerasy.utils import toGREEN
+
 from . import PARAMS_DIR_PATH
 
 def load_params(path=None, name="chemvae"):
@@ -26,3 +28,12 @@ def load_params(path=None, name="chemvae"):
 
     default_params.update(params)
     return default_params
+
+def update_params(params={}, **kwargs):
+    for k,v in kwargs.items():
+        if k not in params:
+            print(f"{toGREEN('[define]')} {k}={v}")
+        elif params[k] != v:
+            print(f"{toGREEN('[update]')} {k}: {params[k]}->{v}")
+        params[k] = v
+    return params
