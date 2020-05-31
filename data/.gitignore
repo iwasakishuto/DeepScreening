@@ -1,2 +1,3 @@
-test_data/test_smiles.npy
-train_data/train_smiles.npy
+test_data/x_test_smiles.npy
+train_data/x_train_smiles.npy
+train_data/x_val_smiles.npy
