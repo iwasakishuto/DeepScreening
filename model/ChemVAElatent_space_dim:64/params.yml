@@ -1,0 +1,56 @@
+batch_size: 128
+conv_activation: tanh
+conv_depth_gf: 1.15875438383
+conv_dim_depth: 8
+conv_dim_width: 8
+conv_dropout_rate: 0.0
+conv_width_gf: 1.1758149644
+dense_activation: tanh
+dense_dropout_rate: 0.0
+epochs: 1
+gru_activation: tanh
+gru_dim: 50
+gru_dropout_rate: 0.0
+is_batchnorm_conv: true
+is_batchnorm_dense: true
+is_batchnorm_gru: true
+is_batchnorm_prop: true
+latent space_dim: 128
+latent_space_dim: 64
+latent_space_dim_gf: 1.4928245388
+loss_decoder: binary_crossentropy
+loss_layers:
+- decoder
+- reg_property_pred
+- logit_property_pred
+loss_logit_property_pred: binary_crossentropy
+loss_reg_property_pred: mse
+metric_decoder: accuaracy
+metric_layers:
+- decoder
+model: ChemVAE
+num_conv_layers: 4
+num_dense_layers: 2
+num_gru_layers: 4
+num_logit_prop_tasks: 1
+num_prov_layers: 3
+num_reg_prop_tasks: 2
+optimizer: adam
+optimizer_kwargs:
+  amsgrad: false
+  beta_1: 0.9
+  beta_2: 0.999
+  epsilon: 1.0e-07
+  lr: 0.001
+prop_hidden_dim: 36
+prop_hidden_dim_gf: 0.8
+prop_pred_activation: tanh
+prop_pred_dropout_rate: 0.0
+test_dir: ../../data/test_data
+train_dir: ../../data/train_data
+val_dir: ../../data/train_data
+x_data:
+  input_mol_SMILES: smiles.npy
+y_data:
+  logit_property_pred: chemvae_logit.npy
+  reg_property_pred: chemvae_reg.npy
