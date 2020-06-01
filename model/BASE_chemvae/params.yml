@@ -33,7 +33,7 @@ loss_logit_property_pred : binary_crossentropy
 # metrics
 metric_layers:
   - decoder
-metric_decoder  : accuaracy
+metric_decoder  : accuracy
 
 #=========
 # Model

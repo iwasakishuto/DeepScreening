@@ -4,22 +4,22 @@ import re
 import argparse
 import warnings
 import numpy as np
-from keras.layers import (Layer, Input, Lambda, Dense, Flatten,
-                                     RepeatVector, Dropout, Concatenate,
-                                     Convolution1D, GRU, BatchNormalization)
+from keras.layers import (Layer, Input, Lambda, Dense, Flatten, RepeatVector,
+                          Dropout, Concatenate, Convolution1D, GRU,
+                          BatchNormalization)
 from keras.models import load_model, Model
 from keras import losses
 from keras import backend as K
 
 from .utils import load_params
+from .utils import update_params
 
 class ChemVAE(Model):
-    def __init__(self, params=None, x_train=None, **kwargs):
+    def __init__(self, params=None, x_train_data={}, y_train_data={}, **kwargs):
         if params is None or isinstance(params, str):
             params = load_params(path=params, name="chemvae")
         params.update(kwargs)
-        if x_train is not None:
-            params = self._update_params(x_train, params)
+        params = self._update_params(params, x_train_data, y_train_data)
         # Build the respective models.
         encoder = load_encoder(params=params)
         decoder = load_decoder(params=params)
@@ -42,56 +42,43 @@ class ChemVAE(Model):
         self.decoder = decoder
         self.property_predictor = property_predictor
         # Add losses.
-        self._add_losses(
-            x_in=x_in, z_mean=z_mean, z_log_var=z_log_var,
-            reconstructed=reconstructed, predictions=predictions,
-            params=params
-        )
+        self._add_losses(z_mean=z_mean, z_log_var=z_log_var, params=params)
         self.params = params
 
-    def _update_params(self, x_train, params):
-        num_tranin, max_chem_len, num_chars = x_train.shape
-        params["max_chem_len"] = max_chem_len
-        params["num_chars"] = num_chars
+    def _update_params(self, params, x_train_data={}, y_train_data={}):
+        if "input_mol_SMILES" in x_train_data:
+            x_train_input = x_train_data.get("input_mol_SMILES")
+            num_tranin, max_chem_len, num_chars = x_train_input.shape
+            params = update_params(params, max_chem_len=max_chem_len, num_chars=num_chars)
+            print(num_tranin, max_chem_len, num_chars)
+        if "reg_property_pred" in y_train_data:
+            y_train_reg = y_train_data.get("reg_property_pred")
+            num_train, num_reg_prop_tasks = y_train_reg.shape
+            params = update_params(params, num_reg_prop_tasks=num_reg_prop_tasks)
+        if "logit_property_pred" in y_train_data:
+            y_train_logit = y_train_data.get("logit_property_pred")
+            num_train, num_logit_prop_tasks = y_train_logit.shape
+            params = update_params(params, num_logit_prop_tasks=num_logit_prop_tasks)
         return params
 
-    def _add_losses(self, x_in, z_mean, z_log_var, reconstructed, predictions, params={}):
+    def _add_losses(self, z_mean, z_log_var, params={}):
         kl_loss = 1 + z_log_var - K.square(z_mean) - K.exp(z_log_var)
         kl_loss = K.sum(kl_loss, axis=-1)
         kl_loss *= -0.5
-        kl_loss /= params["max_chem_len"]*params["num_chars"]
+        kl_loss /= params.get("max_chem_len", 1)*params.get("num_chars", 1)
         self.add_loss(K.mean(kl_loss))
 
-        prop_losses = {"decoder": params.get("reconstruction_loss", "binary_crossentropy")}
-        if "reg_prop_pred_loss" in params:
-            prop_losses["reg_property_pred"] = params.get("reg_prop_pred_loss")
-        if "logit_prop_pred_loss" in params:
-            prop_losses["logit_property_pred"] =  params.get("logit_prop_pred_loss")
-        self.prop_losses = prop_losses
-
-    def compile(self, optimizer, loss=None, metrics=None, loss_weights=None):
-        if loss is not None:
-            warnings.warn(f"Loss is already defined. If you want to customize it, please describe it in the params file.")
-        super().compile(optimizer=optimizer, loss=self.prop_losses, metrics=metrics, loss_weights=loss_weights)
-
-    def fit(self, x=None, y=None, batch_size=None, epochs=1, verbose=1,
-            callbacks=None, validation_split=0.0, validation_data=None,
+    def fit(self, x_train_data={}, y_train_data={}, batch_size=None, epochs=1,
+            verbose=1, callbacks=None, validation_split=0.0, validation_data=None,
             shuffle=True, class_weight=None, sample_weight=None, initial_epoch=0,
             steps_per_epoch=None, validation_steps=None, validation_freq=1,
             max_queue_size=10, workers=1, use_multiprocessing=False, **kwargs):
-        num_prop_tasks = len(self.prop_losses)
-        if num_prop_tasks == 3:
-            y = {"decoder": x, "reg_property_pred": y[0], "logit_property_pred": y[1]}
-            if validation_data is not None:
-                x_val, y_val_reg, y_val_logit = validation_data
-                validation_data = (x_val, {"decoder": x_val, "reg_property_pred": y_val_reg, "logit_property_pred": y_val_logit})
-        elif num_prop_tasks == 2:
-            prop_pred_name = list(self.prop_losses.keys())[0]
-            y = {"decoder": x, prop_pred_name: y}
-            if validation_data is not None:
-                x_val, y_val  = validation_data
-                validation_data = (x_val, {"decoder": x_val, prop_pred_name: y_val})
-        return super().fit(x=x, y=y, batch_size=batch_size, epochs=epochs, verbose=verbose,
+        y_train_data["decoder"] = x_train_data.get("input_mol_SMILES")
+        if validation_data is not None:
+            x_val_data, y_val_data = validation_data
+            y_val_data["decoder"] = x_val_data.get("input_mol_SMILES")
+            validation_data = (x_val_data, y_val_data)
+        return super().fit(x=x_train_data, y=y_train_data, batch_size=batch_size, epochs=epochs, verbose=verbose,
                            callbacks=callbacks, validation_split=validation_split, validation_data=validation_data,
                            shuffle=shuffle, class_weight=class_weight, sample_weight=sample_weight, initial_epoch=initial_epoch,
                            steps_per_epoch=steps_per_epoch, validation_steps=validation_steps, validation_freq=validation_freq,
@@ -128,8 +115,10 @@ def sampling(args):
 def encoder_model(params={}, **kwargs):
     params.update(kwargs)
     max_chem_len = params.get("max_chem_len")
-    num_chars    = params.get("num_chars", 35) # zinc.yml
-    x_in = Input(shape=(max_chem_len, num_chars), name='input_mol_SMILES')
+    num_chars    = params.get("num_chars") # zinc.yml
+    if (max_chem_len is None) or (num_chars is None):
+        raise ValueError("You should define `max_chem_len` and `num_chars` in parameter file.")
+    x_in = Input(shape=(max_chem_len, num_chars), name="input_mol_SMILES")
 
     # Convolutional
     num_conv_layers   = params.get("num_conv_layers", 4)
@@ -300,58 +289,3 @@ def load_property_predictor(params={}, **kwargs):
         return load_model(path)
     else:
         return property_predictor_model(params, **kwargs)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--params", type=str, required=True)
-    parser.add_argument("-train", "--train-basename", type=str)
-    parser.add_argument("-val",   "--validation-basename", type=str)
-    parser.add_argument("--non-verbose", action="store_false")
-    args = parser.parse_args()
-
-    params_rela_path = args.params
-    dirname          = os.path.dirname(params_rela_path)
-    params_file_name = os.path.basename(params_rela_path)
-    os.getcwd(dirname)
-    params = load_params(path=params_file_name, name="ChemVAE")
-
-    train_basename = args.train_basename
-    if train_basename is None:
-        train_basename = params.get("train_basename")
-        train_x = np.load(f"{train_basename}_x.npy", allow_pickle=True)
-        train_y = []
-        for path in [f"{train_basename}_y_reg.npy", f"{train_basename}_y_logit.npy"]:
-            if os.path.exists(path):
-                train_y.append(np.load(path, allow_pickle=True))
-    else:
-        train_basename = os.path.basename(train_basename)
-
-    validation_basename = args.validation_basename
-    if validation_basename is None:
-        validation_basename = params.get("validation_basename")
-        if validation_basename is None:
-            validation_data = None
-        else:
-            val_x = np.load(f"{validation_basename}_x.npy", allow_pickle=True)
-            val_y = []
-            for path in [f"{validation_basename}_y_reg.npy", f"{validation_basename}_y_logit.npy"]:
-                if os.path.exists(path):
-                    train_y.append(np.load(path, allow_pickle=True))
-            validation_data = (val_x, val_y)
-    else:
-        validation_basename = os.path.basename(validation_basename)
-
-    model = ChemVAE(params=params, x_train=train_x)
-    with open("model_summary.txt", mode="w") as fp:
-        model.summary(print_fn=lambda x: fp.write(x + "\r\n"))
-
-    optimizer  = params.get("optimizer", "adam")
-    epochs     = params.get("epochs", 1)
-    batch_size = params.get("batch_size", 32)
-    verbose = 1 if args.non_verbose else 0
-    model.compile(optimizer=optimizer)
-    history = model.fit(x=train_x, y=train_y, epochs=epochs, verbose=verbose,
-                        batch_size=batch_size, validation_data=validation_data)
-    model.save_weights("weights.h5")
-    model.save("model.h5")
-    np.savetxt("loss_history.txt", np.asarray(history.history["loss"]), delimiter=",")

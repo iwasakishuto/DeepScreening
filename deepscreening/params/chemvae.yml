@@ -1,58 +1,79 @@
-{
-    # general parameters
-    batch_size : 32,
-    epochs     : 1,
-    latent space_dim    : 128,
-    latent_space_dim_gf : 1.4928245388, # growth factor applied to determine size of next middle layer.
+# Training parameters.
+batch_size : 128
+epochs     : 1
 
-    # loss function
-    reg_prop_pred_loss   : mse,
-    logit_prop_pred_loss : binary_crossentropy,
-    reconstruction_loss  : binary_crossentropy,
+# optimizer
+optimizer  : adam
+optimizer_kwargs:
+  lr      : 0.001
+  beta_1  : 0.9
+  beta_2  : 0.999
+  epsilon : 0.0000001
+  amsgrad : False
 
-    # =============================
-    # Encoder
-    # =============================
+# loss
+loss_layers:
+  - decoder
+loss_decoder : binary_crossentropy
 
-    # convolution parameters
-    num_conv_layers   : 4,
-    conv_dim_depth    : 8,
-    conv_dim_width    : 8,
-    conv_depth_gf     : 1.15875438383,
-    conv_width_gf     : 1.1758149644,
-    conv_dropout_rate : 0.0,
-    conv_activation   : tanh,
-    is_batchnorm_conv : true,
+# metrics
+metric_layers:
+  - decoder
+metric_decoder  : accuaracy
 
-    # =============================
-    # Encoder & ecoder
-    # =============================
+#=========
+# Model
+#=========
 
-    # Middle layer parameters (Encoder & Decoder)
-    num_dense_layers    : 2,
-    dense_activation    : tanh,
-    dense_dropout_rate  : 0.0,
-    is_batchnorm_dense  : true,
+model : ChemVAE
 
-    # =============================
-    # Decoder
-    # =============================
+latent space_dim    : 128
+latent_space_dim_gf : 1.4928245388 # growth factor applied to determine size of next middle layer.
 
-    # decoder parameters
-    num_gru_layers   : 4,
-    gru_dim          : 50,
-    gru_activation   : tanh,
-    gru_dropout_rate : 0.0,
-    is_batchnorm_gru : True,
+# =============================
+# Encoder
+# =============================
 
-    # =============================
-    # Property Predictor
-    # =============================
+# convolution parameters
+num_conv_layers   : 4
+conv_dim_depth    : 8
+conv_dim_width    : 8
+conv_depth_gf     : 1.15875438383
+conv_width_gf     : 1.1758149644
+conv_dropout_rate : 0.0
+conv_activation   : tanh
+is_batchnorm_conv : true
 
-    num_prov_layers        : 3,
-    prop_hidden_dim        : 36,
-    prop_hidden_dim_gf     : 0.8,
-    prop_pred_activation   : tanh,
-    prop_pred_dropout_rate : 0.0,
-    is_batchnorm_prop      : true,
-}
+# =============================
+# Encoder & ecoder
+# =============================
+
+# Middle layer parameters (Encoder & Decoder)
+num_dense_layers    : 2
+dense_activation    : tanh
+dense_dropout_rate  : 0.0
+is_batchnorm_dense  : true
+
+# =============================
+# Decoder
+# =============================
+
+# decoder parameters
+num_gru_layers   : 4
+gru_dim          : 50
+gru_activation   : tanh
+gru_dropout_rate : 0.0
+is_batchnorm_gru : True
+
+# =============================
+# Property Predictor
+# =============================
+
+num_reg_prop_tasks     : 0
+num_logit_prop_tasks   : 0
+num_prov_layers        : 3
+prop_hidden_dim        : 36
+prop_hidden_dim_gf     : 0.8
+prop_pred_activation   : tanh
+prop_pred_dropout_rate : 0.0
+is_batchnorm_prop      : true
