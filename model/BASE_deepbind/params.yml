@@ -2,6 +2,15 @@
 batch_size : 32
 epochs     : 1
 
+# train/validation/test data.
+train_dir : ../../data/train_data
+val_dir   : ../../data/train_data
+test_dir  : ../../data/test_data
+x_data:
+  input_sequence : sequence.npy
+y_data:
+  embedding : gene_coexp.npy
+
 # optimizer
 optimizer  : adam
 optimizer_kwargs:
