@@ -50,7 +50,6 @@ class ChemVAE(Model):
             x_train_input = x_train_data.get("input_mol_SMILES")
             num_tranin, max_chem_len, num_chars = x_train_input.shape
             params = update_params(params, max_chem_len=max_chem_len, num_chars=num_chars)
-            print(num_tranin, max_chem_len, num_chars)
         if "reg_property_pred" in y_train_data:
             y_train_reg = y_train_data.get("reg_property_pred")
             num_train, num_reg_prop_tasks = y_train_reg.shape

@@ -1,6 +1,7 @@
 # coding: utf-8
 import os
 import numpy as np
+import scipy as sp
 import pandas as pd
 from kerasy.utils import CategoricalEncoder
 from kerasy.utils import toCYAN
@@ -48,6 +49,8 @@ def load_data(path, **kwargs):
             data = pd.read_csv(path).values()
         elif ext in [".xls", ".xlsx"]:
             data = pd.read_excel(path).values()
+        elif ext in [".mtx"]:
+            data = sp.io.mmread(path).todense()
     return data
 
 def arange_datasets(x_data={}, y_data={}, datasets="", basedir=None, **kwargs):
