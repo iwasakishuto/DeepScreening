@@ -18,4 +18,5 @@ dependencies:
   - numpy
   - matplotlib
   - pubchempy
-  - kerasy
+  - pip:
+    - kerasy
